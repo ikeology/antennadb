@@ -1,37 +1,45 @@
 # AntennaDB
 
-A relational graph database modeling antenna performance through the lens of signal gain, environmental interaction, and physical construction.
+A graph model of antenna performance — gain, environment, and materials — as relationships instead of fixed specs.
 
-## Overview
+![AntennaDB graph visualization](data/antennaDB_visualisation.png)
 
-An antenna is a device that transmits and receives electromagnetic energy, forming the essential link between electronic equipment and the surrounding environment. Although antennas are embedded in nearly all modern devices, they are rarely classified, described, or even visible to consumers — in part because antennas are inherently relational components. Their performance depends not only on physical design but on how they interact with other elements in a system: line-of-sight, devices, mounting locations, signal paths, frequency bands, and environmental conditions.
+## Why a graph
 
-Most manufacturer specifications treat antenna gain as a fixed, isolated attribute. AntennaDB models it instead as a relationship — connecting antenna types, use cases, gain values, manufacturers, and the environmental and material conditions that shape real-world performance. By representing antennas within a connected graph rather than a flat table, the project illustrates how many-to-many relationships, rather than isolated specs, define how antennas actually behave.
-
-## Research Questions
-
-1. What performance characteristics do antennas exhibit (point-to-point links, roaming capability, transmission efficiency, reception sensitivity)?
-2. How do environmental conditions — weather, vegetation, temperature — affect antenna gain and overall performance?
-3. How does antenna strength vary from commercial to consumer products (e.g., a long-range directional antenna vs. an iPhone's built-in antenna)?
-4. How do routing protocols, device configuration, frequency selection, and congestion interact with antenna performance in integrated platforms?
-5. What materials are antennas constructed from, and how do variations in conductor type (copper, aluminum, composite materials) influence performance?
+Antenna gain is usually listed as a single fixed number. In practice, performance depends on antenna type, what it's optimized for, the materials it's built from, and what it has to transmit through. AntennaDB models these as relationships in Neo4j, so performance can be queried in context instead of treated as an isolated spec.
 
 ## Schema
 
-The database is normalized to second normal form (2NF), with antenna gain modeled as a relationship rather than a product-level property — reflecting the fact that performance characteristics are intrinsic to antenna design and apply across multiple devices and use cases.
+![Relationship types](data/relationships_table.png)
 
-### Core relationships
+| Relationship        | From        | To           | Example                                   |
+| ------------------- | ----------- | ------------ | ----------------------------------------- |
+| `OPTIMIZED_FOR`     | AntennaType | UseCase      | Directional Panel → Point-to-Point        |
+| `USES_ANTENNA_TYPE` | Product     | AntennaType  | Ubiquiti airMAX SXT 5 → Directional Panel |
+| `HAS_GAIN`          | AntennaType | Gain         | Phased Array → 20 dBi                     |
+| `MANUFACTURED_BY`   | Product     | Manufacturer | Apple iPhone 17 → Apple Inc.              |
 
-| Relationship | From Node | To Node | Purpose | Example |
-|---|---|---|---|---|
-| `OPTIMIZED_FOR` | AntennaType | UseCase | Describes the intended functional role of an antenna design | Directional Panel → Point-to-Point |
-| `USES_ANTENNA_TYPE` | Product | AntennaType | Links a product to the antenna design it employs | Ubiquiti airMAX SXT 5 → Directional Panel |
-| `HAS_GAIN` | AntennaType | Gain | Represents antenna gain as a reusable performance characteristic | Phased Array → 20 dBi |
-| `MANUFACTURED_BY` | Product | Manufacturer | Links a product to its manufacturer | Apple iPhone 17 → Apple Inc. |
+50 nodes, 33 relationships across `AntennaType`, `Gain`, `Manufacturer`, `Product`, `RadioInterface`, and `UseCase`.
 
-## Sample Queries
+## Explore the data
 
-**Compare gain across device classes** (e.g., smartphone vs. satellite antenna):
+The full graph export is in [`data/antennadb_export.cypher`](data/antennadb_export.cypher) — a Cypher script that rebuilds the database from scratch.
+
+**To load it:**
+
+1. Install [Neo4j Desktop](https://neo4j.com/download/) (free) and create a new empty database, e.g. `antennaproducts`
+2. Open Neo4j Browser and run:
+   ```
+   :source data/antennadb_export.cypher
+   ```
+3. View the full graph:
+   ```cypher
+   MATCH (n)-[r]->(m) RETURN n, r, m
+   ```
+
+## Sample queries
+
+Compare gain across device classes:
 
 ```cypher
 MATCH (a:AntennaType)-[:HAS_GAIN]->(g:Gain)
@@ -39,7 +47,7 @@ RETURN a.antennaTypeId, g.value
 ORDER BY g.value;
 ```
 
-**Identify antennas with commercial-grade gain** (≥10 dBi, directional):
+Find commercial-grade directional antennas (≥10 dBi):
 
 ```cypher
 MATCH (a:AntennaType)-[:HAS_GAIN]->(g:Gain)
@@ -47,54 +55,12 @@ WHERE a.coverageType = 'Directional' AND g.value >= 10
 RETURN a.antennaTypeId, g.value;
 ```
 
-**Identify what an antenna type is optimized for:**
+More queries in [`queries/sample_queries.cypher`](queries/sample_queries.cypher).
 
-```cypher
-MATCH (a:AntennaType)-[:OPTIMIZED_FOR]->(u:UseCase {name: "Point-to-Point"})
-RETURN a.name AS AntennaType;
-```
+## Source
 
-**Cross-reference manufacturers, products, and performance:**
-
-```cypher
-MATCH (m:Manufacturer)-[:MANUFACTURES]->(p:Product)-[:USES_ANTENNA_TYPE]->(a:AntennaType)
-OPTIONAL MATCH (a)-[:HAS_GAIN]->(g:Gain)
-RETURN
-  m.name AS Manufacturer,
-  p.name AS Product,
-  a.name AS AntennaType,
-  g.value + " " + g.unit AS Gain,
-  p.coverage AS Coverage
-ORDER BY Manufacturer, Product;
-```
-
-**Map products and manufacturers to supported radio interfaces:**
-
-```cypher
-MATCH (m:Manufacturer)-[:MANUFACTURES]->(p:Product)-[:SUPPORTS_INTERFACE]->(r:RadioInterface)
-RETURN
-  m.name AS Manufacturer,
-  p.name AS Product,
-  r.description AS RadioInterface,
-  r.mimo AS MIMO
-ORDER BY Manufacturer, Product;
-```
-
-## Primary Source
-
-Device and antenna specifications were referenced against the [FCC Equipment Authorization Search](https://www.fcc.gov/licensing-databases/search-fcc-databases) for granted filings.
-
-## Why a Graph Model
-
-This approach enables end-to-end analysis of antennas across vastly different scales — from smartphone roaming antennas to high-gain satellite phased arrays — tracing how design choices propagate through connected components. Rather than treating antenna specifications as isolated attributes, the database models how connectivity emerges from relationships: a product using a specific antenna type, that antenna type optimized for a particular use case, and its performance expressed through shared gain characteristics that are reusable across the graph.
-
-The result is a model that does more than store specifications — it captures the ecology of relationships that transform electromagnetic theory into working communication systems, enabling queries and insights difficult to represent in traditional flat or relational databases.
+Device specs cross-referenced against the [FCC Equipment Authorization Search](https://www.fcc.gov/licensing-databases/search-fcc-databases).
 
 ## Author
 
-Isaiah Scott
-DIGS Data Management, University of Chicago — Autumn 2025
-
-## License
-
-MIT
+Isaiah Scott — DIGS Data Management, University of Chicago, Autumn 2025
